@@ -9,7 +9,6 @@
 'use strict';
 
 jest.dontMock('../extractRequires');
-jest.dontMock('../replacePatterns');
 
 const extractRequires = require('../extractRequires');
 

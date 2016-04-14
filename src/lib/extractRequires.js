@@ -8,7 +8,11 @@
  */
 'use strict';
 
-const replacePatterns = require('./replacePatterns');
+const replacePatterns = {
+  IMPORT_RE: /(\bimport\s+(?:[^'"]+\s+from\s+)??)(['"])([^'"]+)(\2)/g,
+  EXPORT_RE: /(\bexport\s+(?:[^'"]+\s+from\s+)??)(['"])([^'"]+)(\2)/g,
+  REQUIRE_RE: /(\brequire\s*?\(\s*?)(['"])([^'"]+)(\2\s*?\))/g,
+};
 
 /**
  * Extract all required modules from a `code` string.

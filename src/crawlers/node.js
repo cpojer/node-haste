@@ -1,61 +1,55 @@
+ /**
+ * Copyright (c) 2015-present, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ */
+
 'use strict';
 
-const denodeify = require('denodeify');
-const debug = require('debug')('ReactNativePackager:DependencyGraph');
-const fs = require('graceful-fs');
-const path = require('../fastpath');
+import denodeify from 'denodeify';
+import fs from 'graceful-fs';
+import glob from 'glob';
+import path from '../fastpath';
 
-const readDir = denodeify(fs.readdir);
-const stat = denodeify(fs.stat);
+const statFile = denodeify(fs.stat);
+const globPromise = denodeify(glob);
 
-function nodeRecReadDir(roots, {ignore, exts}) {
-  const queue = roots.slice();
-  const retFiles = [];
-  const extPattern = new RegExp(
-    '\.(' + exts.join('|') + ')$'
-  );
+export default function nodeCrawl(roots, extensions, ignore, data) {
+  const files = Object.create(null);
+  const pattern =
+    path.sep + '**' + path.sep + '*.{' + extensions.join(',') + '}';
 
-  function search() {
-    const currDir = queue.shift();
-    if (!currDir) {
-      return Promise.resolve();
-    }
-
-    return readDir(currDir)
-      .then(files => files.map(f => path.join(currDir, f)))
-      .then(files => Promise.all(
-        files.map(f => stat(f).catch(handleBrokenLink))
-      ).then(stats => [
-        // Remove broken links.
-        files.filter((file, i) => !!stats[i]),
-        stats.filter(Boolean),
-      ]))
-      .then(([files, stats]) => {
-        files.forEach((filePath, i) => {
-          if (ignore(filePath)) {
-            return;
-          }
-
-          if (stats[i].isDirectory()) {
-            queue.push(filePath);
-            return;
-          }
-
-          if (filePath.match(extPattern)) {
-            retFiles.push(path.resolve(filePath));
-          }
-        });
-
-        return search();
-      });
-  }
-
-  return search().then(() => retFiles);
+  return Promise.all(roots.map(
+    root => globPromise(root + pattern)
+  )).then(list => {
+    let promises = [];
+    list.forEach(fileList => {
+      promises = promises.concat(
+        fileList.map(name =>
+          statFile(name).then(stat => {
+            const mtime = stat.mtime.getTime();
+            const existingFile = data.files[name];
+            if (existingFile && existingFile.mtime === mtime) {
+              console.log('exists', name);
+              files[name] = existingFile;
+            } else {
+              console.log('add', name);
+              files[name] = {
+                id: null,
+                mtime,
+                visited: false,
+              };
+            }
+          })
+        )
+      );
+    });
+    return Promise.all(promises);
+  }).then(() => {
+    data.files = files;
+    return data;
+  });
 }
-
-function handleBrokenLink(e) {
-  debug('WARNING: error stating, possibly broken symlink', e.message);
-  return Promise.resolve();
-}
-
-module.exports = nodeRecReadDir;
